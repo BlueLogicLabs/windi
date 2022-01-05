@@ -1,5 +1,8 @@
 use anyhow::Result;
+use backoff::ExponentialBackoff;
+use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::types::LogEntry;
 
@@ -62,12 +65,38 @@ impl Client {
       .unwrap_or_else(|| DEFAULT_SERVICE_URL.to_string());
     let url = format!("{}/api/v1/sync/pull", url);
     let req = ApiSyncPullReq { from_seq };
-    let rsp = self.http.post(&url).json(&req).send().await?;
-    let status = rsp.status();
-    if !status.is_success() {
-      anyhow::bail!("server error: {} {}", status, rsp.text().await?);
-    }
-    let rsp: ApiSyncPullRsp = rsp.json().await?;
+    let rsp: ApiSyncPullRsp = backoff::future::retry(ExponentialBackoff::default(), || {
+      #[derive(Error, Debug)]
+      #[error("give up")]
+      struct GiveUp;
+      async {
+        let rsp = self.http.post(&url).json(&req).send().await?;
+        let status = rsp.status();
+        if !status.is_success() {
+          let text = rsp.text().await?;
+          if status.is_client_error() {
+            log::error!("client error, not retrying: {} {}", status, text);
+            Err(GiveUp.into())
+          } else {
+            anyhow::bail!("server error: {} {}", status, text);
+          }
+        } else {
+          Ok(rsp.json().await?)
+        }
+      }
+      .map_err(|e| {
+        if e.downcast_ref::<GiveUp>().is_some() {
+          backoff::Error::Permanent(e)
+        } else {
+          log::error!("retryable pull error: {}", e);
+          backoff::Error::Transient {
+            err: anyhow::anyhow!("unable to pull logs from service"),
+            retry_after: None,
+          }
+        }
+      })
+    })
+    .await?;
     let mut out: Vec<LogEntryWithSeq> = vec![];
     for raw in rsp.data {
       let mut seq = hex::decode(&raw.seq)?;
