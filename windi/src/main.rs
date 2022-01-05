@@ -22,7 +22,7 @@ enum Command {
   /// Manually pull logs once from the provided sequence number.
   Pull {
     /// Hex-encoded start sequence number.
-    #[structopt(long = "from", short = "f")]
+    #[structopt(long = "from", short = "f", default_value = "")]
     from: String,
   },
 }
@@ -43,18 +43,25 @@ async fn main() -> Result<()> {
       let mut from = hex::decode(&from)?;
       from.reverse();
       from.resize(16, 0);
-      let from = u128::from_le_bytes(<[u8; 16]>::try_from(from).unwrap());
-      let rsp = client.pull(from).await?;
-      for log in rsp {
-        let value: serde_json::Value = match log.log {
-          Ok(x) => serde_json::to_value(&x)?,
-          Err(x) => serde_json::Value::String(x),
-        };
-        let entry = serde_json::json!({
-          "seq": hex::encode(&log.seq.to_be_bytes()[..]),
-          "value": value,
-        });
-        println!("{}", entry.to_string());
+      let mut from = u128::from_le_bytes(<[u8; 16]>::try_from(from).unwrap());
+      loop {
+        let rsp = client.pull(from).await?;
+        if rsp.is_empty() {
+          break;
+        }
+        from = rsp.last().unwrap().seq + 1;
+
+        for log in rsp {
+          let value: serde_json::Value = match log.log {
+            Ok(x) => serde_json::to_value(&x)?,
+            Err(x) => serde_json::Value::String(x),
+          };
+          let entry = serde_json::json!({
+            "seq": hex::encode(&log.seq.to_be_bytes()[..]),
+            "value": value,
+          });
+          println!("{}", entry.to_string());
+        }
       }
     }
   }
