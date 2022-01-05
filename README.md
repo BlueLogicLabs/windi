@@ -1,2 +1,7 @@
 # windi
-WindiSync client
+
+Bluebird WindiSync CLI and client library.
+
+## License
+
+MIT
