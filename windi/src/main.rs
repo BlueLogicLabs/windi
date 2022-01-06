@@ -45,7 +45,7 @@ async fn main() -> Result<()> {
       from.resize(16, 0);
       let mut from = u128::from_le_bytes(<[u8; 16]>::try_from(from).unwrap());
       loop {
-        let rsp = client.pull(from).await?;
+        let rsp = client.sync(from).await?;
         if rsp.is_empty() {
           break;
         }

@@ -56,14 +56,14 @@ impl Client {
     Ok(Self { config, http })
   }
 
-  pub async fn pull(&self, from_seq: u128) -> Result<Vec<LogEntryWithSeq>> {
+  pub async fn sync(&self, from_seq: u128) -> Result<Vec<LogEntryWithSeq>> {
     let from_seq = hex::encode(&from_seq.to_be_bytes()[..]);
     let url = self
       .config
       .url
       .clone()
       .unwrap_or_else(|| DEFAULT_SERVICE_URL.to_string());
-    let url = format!("{}/api/v1/sync/pull", url);
+    let url = format!("{}/windi/v1/sync", url);
     let req = ApiSyncPullReq { from_seq };
     let rsp: ApiSyncPullRsp = backoff::future::retry(ExponentialBackoff::default(), || {
       #[derive(Error, Debug)]

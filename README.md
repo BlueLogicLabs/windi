@@ -1,6 +1,6 @@
 # windi
 
-Bluebird WindiSync CLI and client library.
+Bluebird Windi API client library and CLI.
 
 ## License
 
